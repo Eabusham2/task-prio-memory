@@ -562,6 +562,9 @@ namespace TaskPrioMemory.UI
 
             long mask = BuildMaskFromChecks();
             bool fullMask = (mask & ProcessManager.FullMask) == ProcessManager.FullMask;
+            // "All CPUs" means "no affinity preference" (stored as null), so leaving
+            // every box checked must NOT touch a process's existing restricted affinity.
+            bool changeAffinity = !fullMask;
             if (mask == 0)
             {
                 MessageBox.Show("At least one CPU must stay checked.", "TaskPrioMemory",
@@ -588,8 +591,11 @@ namespace TaskPrioMemory.UI
                         var r = ProcessManager.SetPriority(p, prio, out _);
                         Tally(r, ref applied, ref denied, ref gone);
                     }
-                    var ra = ProcessManager.SetAffinity(p, mask, out _);
-                    Tally(ra, ref applied, ref denied, ref gone);
+                    if (changeAffinity)
+                    {
+                        var ra = ProcessManager.SetAffinity(p, mask, out _);
+                        Tally(ra, ref applied, ref denied, ref gone);
+                    }
                 }
             }
 

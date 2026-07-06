@@ -19,7 +19,8 @@ namespace TaskPrioMemory.Core
     {
         private readonly RuleStore _store;
         private readonly Timer _timer;
-        private readonly HashSet<int> _seen = new HashSet<int>();
+        // Keyed by PID + start time so a reused PID counts as a new process.
+        private readonly HashSet<string> _seen = new HashSet<string>();
         private readonly object _scanGate = new object();
         private volatile bool _disposed;
 
@@ -65,13 +66,14 @@ namespace TaskPrioMemory.Core
         private void Scan(bool reapplyEverything)
         {
             Process[] procs = Process.GetProcesses();
-            var current = new HashSet<int>();
+            var current = new HashSet<string>();
 
             foreach (var p in procs)
             {
                 int pid = p.Id;
-                current.Add(pid);
-                bool isNew = !_seen.Contains(pid);
+                string key = IdentityKey(p, pid);
+                current.Add(key);
+                bool isNew = !_seen.Contains(key);
 
                 if (isNew || reapplyEverything)
                 {
@@ -90,9 +92,20 @@ namespace TaskPrioMemory.Core
                 p.Dispose();
             }
 
-            // Keep the "seen" set bounded to live PIDs so it never grows unbounded.
+            // Keep the "seen" set bounded to live processes so it never grows unbounded.
             _seen.Clear();
             _seen.UnionWith(current);
+        }
+
+        /// <summary>
+        /// Stable-enough identity for a running process. Start time distinguishes a
+        /// reused PID from the original process; if it can't be read (access denied)
+        /// we fall back to the PID alone.
+        /// </summary>
+        private static string IdentityKey(Process p, int pid)
+        {
+            try { return pid + ":" + p.StartTime.Ticks; }
+            catch { return pid.ToString(); }
         }
 
         private static string SafeName(Process p)
