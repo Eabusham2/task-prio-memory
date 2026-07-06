@@ -39,9 +39,15 @@ Think "the two most useful columns of Task Manager, made permanent."
    **CPU affinity** boxes.
    - **Apply now** — changes the running instance(s) immediately.
    - **Save + remember** — also stores the preference for next time.
+   - Use the **Filter by name** box to find a program quickly; a **✓** in the
+     *Saved* column marks programs you already have a preference for.
+   - Tick **Auto-refresh** to keep the list live while the window is open (it
+     pauses automatically when you hide the window, to stay idle).
 4. **Saved Preferences** tab → see everything you've remembered. Untick a row to
    temporarily disable it, or select and **Remove** it.
-5. Right-click the tray icon for **Run at Windows startup**, **Apply preferences
+5. **Options** tab → toggle run-at-startup, start-minimized, continuous
+   re-apply, and the scan interval (larger = even lower CPU usage).
+6. Right-click the tray icon for **Run at Windows startup**, **Apply preferences
    to running apps now**, or **Exit**.
 
 ### A note on permissions

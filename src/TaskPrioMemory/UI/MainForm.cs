@@ -23,6 +23,8 @@ namespace TaskPrioMemory.UI
 
         // Processes tab
         private ListView _procList;
+        private TextBox _filterBox;
+        private CheckBox _autoRefresh;
         private ComboBox _priorityCombo;
         private CheckedListBox _affinityList;
         private Label _selectedLabel;
@@ -34,6 +36,18 @@ namespace TaskPrioMemory.UI
 
         private SplitContainer _split;
         private Label _status;
+        private Timer _refreshTimer;
+
+        // Snapshot of the last process scan (so filtering doesn't re-enumerate).
+        private sealed class ProcSnap
+        {
+            public int Id;
+            public string Name;
+            public string Prio;
+            public string Aff;
+            public bool Saved;
+        }
+        private List<ProcSnap> _snapshot = new List<ProcSnap>();
 
         public MainForm(RuleStore store, ProcessWatcher watcher)
         {
@@ -56,6 +70,7 @@ namespace TaskPrioMemory.UI
             var tabs = new TabControl { Dock = DockStyle.Fill };
             tabs.TabPages.Add(BuildProcessesTab());
             tabs.TabPages.Add(BuildSavedTab());
+            tabs.TabPages.Add(BuildOptionsTab());
 
             _status = new Label
             {
@@ -95,17 +110,43 @@ namespace TaskPrioMemory.UI
                 HideSelection = false,
                 GridLines = false
             };
-            _procList.Columns.Add("Program", 170);
-            _procList.Columns.Add("PID", 60, HorizontalAlignment.Right);
-            _procList.Columns.Add("Priority", 100);
-            _procList.Columns.Add("Affinity", 160);
+            _procList.Columns.Add("Program", 160);
+            _procList.Columns.Add("PID", 55, HorizontalAlignment.Right);
+            _procList.Columns.Add("Priority", 95);
+            _procList.Columns.Add("Affinity", 150);
+            _procList.Columns.Add("Saved", 55, HorizontalAlignment.Center);
             _procList.SelectedIndexChanged += (s, e) => OnProcessSelected();
 
             var leftPanel = new Panel { Dock = DockStyle.Fill };
-            var refreshBtn = new Button { Text = "Refresh list", Dock = DockStyle.Top, Height = 30 };
+
+            _filterBox = new TextBox { Dock = DockStyle.Top };
+            _filterBox.TextChanged += (s, e) => ApplyFilter();
+            var filterLabel = new Label
+            {
+                Dock = DockStyle.Top,
+                Height = 18,
+                Text = "Filter by name:",
+                ForeColor = SystemColors.GrayText
+            };
+
+            var topBar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 34, AutoSize = false };
+            var refreshBtn = new Button { Text = "Refresh list", Width = 100, Height = 28 };
             refreshBtn.Click += (s, e) => RefreshProcesses();
+            _autoRefresh = new CheckBox
+            {
+                Text = "Auto-refresh",
+                AutoSize = true,
+                Margin = new Padding(8, 6, 0, 0)
+            };
+            _autoRefresh.CheckedChanged += (s, e) => ToggleAutoRefresh(_autoRefresh.Checked);
+            topBar.Controls.Add(refreshBtn);
+            topBar.Controls.Add(_autoRefresh);
+
+            // Docked controls render in reverse add-order, so add the fill first.
             leftPanel.Controls.Add(_procList);
-            leftPanel.Controls.Add(refreshBtn);
+            leftPanel.Controls.Add(_filterBox);
+            leftPanel.Controls.Add(filterLabel);
+            leftPanel.Controls.Add(topBar);
             split.Panel1.Controls.Add(leftPanel);
 
             // Right: editor
@@ -251,42 +292,167 @@ namespace TaskPrioMemory.UI
             return page;
         }
 
+        // ---------- Options tab ----------
+
+        private TabPage BuildOptionsTab()
+        {
+            var page = new TabPage("Options") { Padding = new Padding(16) };
+            var s = _store.Settings;
+
+            var layout = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true
+            };
+
+            var startupChk = new CheckBox
+            {
+                Text = "Run at Windows startup (starts hidden in the tray)",
+                AutoSize = true,
+                Checked = StartupManager.IsEnabled(),
+                Margin = new Padding(0, 6, 0, 6)
+            };
+            startupChk.CheckedChanged += (o, e) =>
+            {
+                if (!StartupManager.SetEnabled(startupChk.Checked))
+                    startupChk.Checked = StartupManager.IsEnabled();
+            };
+
+            var minimizedChk = new CheckBox
+            {
+                Text = "Start minimized to the tray",
+                AutoSize = true,
+                Checked = s.StartMinimized,
+                Margin = new Padding(0, 6, 0, 6)
+            };
+            minimizedChk.CheckedChanged += (o, e) =>
+            {
+                s.StartMinimized = minimizedChk.Checked;
+                _store.SaveSettings();
+            };
+
+            var reapplyChk = new CheckBox
+            {
+                Text = "Continuously re-apply (guards apps that reset their own priority/affinity)",
+                AutoSize = true,
+                Checked = s.ReapplyContinuously,
+                Margin = new Padding(0, 6, 0, 6)
+            };
+            reapplyChk.CheckedChanged += (o, e) =>
+            {
+                s.ReapplyContinuously = reapplyChk.Checked;
+                _store.SaveSettings();
+            };
+
+            var pollPanel = new FlowLayoutPanel { AutoSize = true, Margin = new Padding(0, 12, 0, 6) };
+            pollPanel.Controls.Add(new Label
+            {
+                Text = "Scan for newly launched programs every",
+                AutoSize = true,
+                Margin = new Padding(0, 6, 6, 0)
+            });
+            var pollUpDown = new NumericUpDown
+            {
+                Minimum = 1,
+                Maximum = 3600,
+                Value = Math.Min(3600, Math.Max(1, s.PollSeconds)),
+                Width = 70
+            };
+            pollUpDown.ValueChanged += (o, e) =>
+            {
+                s.PollSeconds = (int)pollUpDown.Value;
+                _store.SaveSettings();
+                _watcher.UpdateInterval();
+                SetStatus($"Scan interval set to {s.PollSeconds}s.");
+            };
+            pollPanel.Controls.Add(pollUpDown);
+            pollPanel.Controls.Add(new Label { Text = "seconds", AutoSize = true, Margin = new Padding(4, 6, 0, 0) });
+
+            var note = new Label
+            {
+                AutoSize = true,
+                MaximumSize = new Size(520, 0),
+                ForeColor = SystemColors.GrayText,
+                Margin = new Padding(0, 16, 0, 0),
+                Text = "A larger interval means even lower CPU usage; a smaller one applies " +
+                       "your saved preferences to freshly-launched programs a little sooner. " +
+                       "The watcher idles at ~0% CPU between scans either way."
+            };
+
+            layout.Controls.Add(new Label
+            {
+                Text = "Behaviour",
+                AutoSize = true,
+                Font = new Font("Segoe UI", 11f, FontStyle.Bold),
+                Margin = new Padding(0, 0, 0, 6)
+            });
+            layout.Controls.Add(startupChk);
+            layout.Controls.Add(minimizedChk);
+            layout.Controls.Add(reapplyChk);
+            layout.Controls.Add(pollPanel);
+            layout.Controls.Add(note);
+
+            page.Controls.Add(layout);
+            return page;
+        }
+
         // ---------- Behaviour ----------
 
         private void RefreshProcesses()
         {
+            var savedNames = new HashSet<string>(
+                _store.GetRules().Select(r => r.Name), StringComparer.OrdinalIgnoreCase);
+
+            _snapshot = Process.GetProcesses()
+                .Select(p =>
+                {
+                    try
+                    {
+                        string name = p.ProcessName;
+                        return new ProcSnap
+                        {
+                            Id = p.Id,
+                            Name = name,
+                            Prio = SafePriority(p),
+                            Aff = SafeAffinity(p),
+                            Saved = savedNames.Contains(name)
+                        };
+                    }
+                    catch { return null; }
+                    finally { p.Dispose(); }
+                })
+                .Where(x => x != null && !string.IsNullOrEmpty(x.Name))
+                .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(x => x.Id)
+                .ToList();
+
+            ApplyFilter();
+        }
+
+        /// <summary>Renders the current snapshot into the list, honouring the filter box.</summary>
+        private void ApplyFilter()
+        {
             string previouslySelected = SelectedProcessName();
+            string filter = _filterBox?.Text?.Trim();
+
             _procList.BeginUpdate();
             _procList.Items.Clear();
             try
             {
-                var procs = Process.GetProcesses()
-                    .Select(p =>
-                    {
-                        try
-                        {
-                            return new
-                            {
-                                p.Id,
-                                Name = p.ProcessName,
-                                Prio = SafePriority(p),
-                                Aff = SafeAffinity(p)
-                            };
-                        }
-                        catch { return null; }
-                        finally { p.Dispose(); }
-                    })
-                    .Where(x => x != null && !string.IsNullOrEmpty(x.Name))
-                    .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(x => x.Id)
-                    .ToList();
-
-                foreach (var x in procs)
+                foreach (var x in _snapshot)
                 {
+                    if (!string.IsNullOrEmpty(filter) &&
+                        x.Name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+
                     var item = new ListViewItem(x.Name) { Tag = x.Name };
                     item.SubItems.Add(x.Id.ToString());
                     item.SubItems.Add(x.Prio);
                     item.SubItems.Add(x.Aff);
+                    item.SubItems.Add(x.Saved ? "✓" : "");
+                    if (x.Saved) item.ForeColor = Color.FromArgb(0x1B, 0x66, 0x2C);
                     _procList.Items.Add(item);
                 }
             }
@@ -297,6 +463,23 @@ namespace TaskPrioMemory.UI
 
             if (previouslySelected != null)
                 ReselectProcess(previouslySelected);
+        }
+
+        private void ToggleAutoRefresh(bool on)
+        {
+            if (on)
+            {
+                if (_refreshTimer == null)
+                {
+                    _refreshTimer = new Timer { Interval = 3000 };
+                    _refreshTimer.Tick += (s, e) => RefreshProcesses();
+                }
+                _refreshTimer.Start();
+            }
+            else
+            {
+                _refreshTimer?.Stop();
+            }
         }
 
         private static string SafePriority(Process p)
@@ -523,10 +706,32 @@ namespace TaskPrioMemory.UI
             if (e.CloseReason == CloseReason.UserClosing)
             {
                 e.Cancel = true;
+                _refreshTimer?.Stop(); // don't scan while hidden
                 Hide();
                 return;
             }
             base.OnFormClosing(e);
+        }
+
+        protected override void OnVisibleChanged(EventArgs e)
+        {
+            base.OnVisibleChanged(e);
+            // Resume auto-refresh only while the window is actually on screen.
+            if (Visible && _autoRefresh != null && _autoRefresh.Checked)
+            {
+                RefreshProcesses();
+                _refreshTimer?.Start();
+            }
+            else
+            {
+                _refreshTimer?.Stop();
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) _refreshTimer?.Dispose();
+            base.Dispose(disposing);
         }
     }
 }
