@@ -8,7 +8,8 @@ namespace TaskPrioMemory
 {
     internal static class Program
     {
-        // Per-user single-instance guard.
+        // Per-user single-instance guard + wake-up signal for second launches.
+        internal const string ShowWindowEventName = @"Local\TaskPrioMemory.ShowWindow";
         private static Mutex _mutex;
 
         [STAThread]
@@ -18,7 +19,13 @@ namespace TaskPrioMemory
             _mutex = new Mutex(true, @"Local\TaskPrioMemory.SingleInstance", out createdNew);
             if (!createdNew)
             {
-                // Already running in the tray — nothing to do.
+                // Already running in the tray — ask that instance to show its window.
+                try
+                {
+                    using (var wake = EventWaitHandle.OpenExisting(ShowWindowEventName))
+                        wake.Set();
+                }
+                catch { /* first instance is mid-startup or exiting; nothing to do */ }
                 return;
             }
 

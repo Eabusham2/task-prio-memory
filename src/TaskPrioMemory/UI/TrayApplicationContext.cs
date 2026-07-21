@@ -17,6 +17,8 @@ namespace TaskPrioMemory.UI
         private readonly ProcessWatcher _watcher;
         private readonly NotifyIcon _tray;
         private readonly SynchronizationContext _ui;
+        private readonly EventWaitHandle _wakeEvent;
+        private RegisteredWaitHandle _wakeRegistration;
         private MainForm _form;
 
         public TrayApplicationContext(bool startHidden)
@@ -36,6 +38,14 @@ namespace TaskPrioMemory.UI
                 ContextMenuStrip = BuildMenu()
             };
             _tray.DoubleClick += (s, e) => ShowWindow();
+
+            // Launching the exe again while we're in the tray signals this event
+            // (see Program.Main); respond by bringing the window up.
+            _wakeEvent = new EventWaitHandle(false, EventResetMode.AutoReset, Program.ShowWindowEventName);
+            _wakeRegistration = ThreadPool.RegisterWaitForSingleObject(
+                _wakeEvent,
+                (state, timedOut) => _ui.Post(_ => ShowWindow(), null),
+                null, Timeout.Infinite, executeOnlyOnce: false);
 
             _watcher.Start();
 
@@ -118,6 +128,9 @@ namespace TaskPrioMemory.UI
             try
             {
                 _tray.Visible = false;
+                _wakeRegistration?.Unregister(null);
+                _wakeRegistration = null;
+                _wakeEvent?.Dispose();
                 _watcher.Dispose();
                 _tray.Dispose();
             }
@@ -131,6 +144,9 @@ namespace TaskPrioMemory.UI
         {
             if (disposing)
             {
+                _wakeRegistration?.Unregister(null);
+                _wakeRegistration = null;
+                _wakeEvent?.Dispose();
                 _watcher?.Dispose();
                 _tray?.Dispose();
             }

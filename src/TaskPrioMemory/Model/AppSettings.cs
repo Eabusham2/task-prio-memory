@@ -18,6 +18,17 @@ namespace TaskPrioMemory.Model
         [DataMember(Order = 2)]
         public bool ReapplyContinuously { get; set; } = false;
 
+        // DataContractJsonSerializer skips field initializers when deserializing,
+        // so a settings file from an older version would leave missing fields at
+        // their zero values (PollSeconds = 0 → 1-second scans). Restore defaults
+        // here; present fields are overwritten right after this runs.
+        [OnDeserializing]
+        private void SetDefaults(StreamingContext _)
+        {
+            PollSeconds = 5;
+            StartMinimized = true;
+        }
+
         public int NormalizedPollMs()
         {
             int s = PollSeconds;
