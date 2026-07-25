@@ -27,6 +27,11 @@ namespace TaskPrioMemory.Model
         [DataMember(Order = 3)]
         public bool Enabled { get; set; } = true;
 
+        // Field initializers don't run during DataContract deserialization; keep a
+        // rule from a file that predates Enabled from silently deserializing disabled.
+        [OnDeserializing]
+        private void SetDefaults(StreamingContext _) => Enabled = true;
+
         public bool HasPriority => !string.IsNullOrEmpty(Priority);
         public bool HasAffinity => Affinity.HasValue;
 

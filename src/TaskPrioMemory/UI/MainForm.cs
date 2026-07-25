@@ -270,11 +270,20 @@ namespace TaskPrioMemory.UI
             _rulesList.ItemChecked += OnRuleChecked;
 
             var bar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 40, AutoSize = false };
-            var reloadBtn = new Button { Text = "Refresh", Width = 90, Height = 30 };
-            var removeBtn = new Button { Text = "Remove selected", Width = 140, Height = 30 };
-            var applyBtn = new Button { Text = "Apply all now", Width = 120, Height = 30 };
-            var folderBtn = new Button { Text = "Open data folder", Width = 130, Height = 30 };
-            reloadBtn.Click += (s, e) => { _store.Reload(); RefreshRules(); };
+            var addBtn = new Button { Text = "Add program…", Width = 115, Height = 30 };
+            var editBtn = new Button { Text = "Edit selected", Width = 110, Height = 30 };
+            var removeBtn = new Button { Text = "Remove selected", Width = 130, Height = 30 };
+            var applyBtn = new Button { Text = "Apply all now", Width = 110, Height = 30 };
+            var folderBtn = new Button { Text = "Open data folder", Width = 125, Height = 30 };
+            addBtn.Click += (s, e) => EditRule(null);
+            editBtn.Click += (s, e) =>
+            {
+                var name = _rulesList.SelectedItems.Count > 0
+                    ? _rulesList.SelectedItems[0].Tag as string : null;
+                if (name == null) { SetStatus("Select a saved preference to edit."); return; }
+                EditRule(_store.Find(name));
+            };
+            _rulesList.DoubleClick += (s, e) => editBtn.PerformClick();
             removeBtn.Click += (s, e) => RemoveSelectedRules();
             applyBtn.Click += (s, e) =>
             {
@@ -282,7 +291,8 @@ namespace TaskPrioMemory.UI
                 SetStatus("Applied saved preferences to matching running programs.");
             };
             folderBtn.Click += (s, e) => OpenDataFolder();
-            bar.Controls.Add(reloadBtn);
+            bar.Controls.Add(addBtn);
+            bar.Controls.Add(editBtn);
             bar.Controls.Add(removeBtn);
             bar.Controls.Add(applyBtn);
             bar.Controls.Add(folderBtn);
@@ -565,6 +575,13 @@ namespace TaskPrioMemory.UI
             // "All CPUs" means "no affinity preference" (stored as null), so leaving
             // every box checked must NOT touch a process's existing restricted affinity.
             bool changeAffinity = !fullMask;
+            if (!changePriority && !changeAffinity)
+            {
+                MessageBox.Show(
+                    "Nothing to apply: choose a priority and/or restrict the CPUs first.",
+                    "TaskPrioMemory", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             if (mask == 0)
             {
                 MessageBox.Show("At least one CPU must stay checked.", "TaskPrioMemory",
@@ -666,6 +683,19 @@ namespace TaskPrioMemory.UI
             _store.SetEnabled(name, e.Item.Checked);
             e.Item.SubItems[3].Text = e.Item.Checked ? "Yes" : "No";
             SetStatus($"{name} preference {(e.Item.Checked ? "enabled" : "disabled")}.");
+        }
+
+        /// <summary>Opens the editor dialog; pass null to create a new rule.</summary>
+        private void EditRule(ProcessRule existing)
+        {
+            using (var dlg = new RuleEditorForm(existing))
+            {
+                if (dlg.ShowDialog(this) != DialogResult.OK || dlg.Result == null) return;
+                _store.Upsert(dlg.Result);
+                RefreshRules();
+                RefreshProcesses(); // update the "Saved" column
+                SetStatus($"Saved preference for {dlg.Result.Name}.");
+            }
         }
 
         private void RemoveSelectedRules()

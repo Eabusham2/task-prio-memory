@@ -34,6 +34,8 @@ Think "the two most useful columns of Task Manager, made permanent."
 ## Usage
 
 1. Launch `TaskPrioMemory.exe`. It appears as an icon in the tray.
+   (Launching it again while it's already running just brings up the window of
+   the existing instance — there's always exactly one copy running.)
 2. Double-click the tray icon to open the window.
 3. **Processes** tab → pick a program → choose a **Priority** and/or check the
    **CPU affinity** boxes.
@@ -44,7 +46,9 @@ Think "the two most useful columns of Task Manager, made permanent."
    - Tick **Auto-refresh** to keep the list live while the window is open (it
      pauses automatically when you hide the window, to stay idle).
 4. **Saved Preferences** tab → see everything you've remembered. Untick a row to
-   temporarily disable it, or select and **Remove** it.
+   temporarily disable it, or select and **Remove** it. **Add program…** lets
+   you save a preference for a program that isn't running yet (it applies the
+   next time it launches); double-click a row (or **Edit selected**) to change it.
 5. **Options** tab → toggle run-at-startup, start-minimized, continuous
    re-apply, and the scan interval (larger = even lower CPU usage).
 6. Right-click the tray icon for **Run at Windows startup**, **Apply preferences
@@ -93,7 +97,8 @@ src/TaskPrioMemory/
     StartupManager.cs        HKCU "run at startup" toggle
   UI/
     TrayApplicationContext.cs  tray icon, menu, app lifetime
-    MainForm.cs                the two-tab window
+    MainForm.cs                the tabbed window
+    RuleEditorForm.cs          add/edit dialog for saved preferences
     IconFactory.cs             runtime-generated icon (no binary asset)
 ```
 
