@@ -34,6 +34,14 @@ namespace TaskPrioMemory.Storage
                 Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                 "TaskPrioMemory");
 
+        /// <summary>
+        /// Raised (on the calling thread) when rules or settings could not be
+        /// written to disk. The in-memory state is still updated, so the app
+        /// keeps working for this session; the UI tells the user the change
+        /// will not survive a restart instead of crashing.
+        /// </summary>
+        public event Action<Exception> SaveFailed;
+
         public RuleStore()
         {
             var dir = DataDirectory;
@@ -59,7 +67,7 @@ namespace TaskPrioMemory.Storage
 
         public void SaveSettings()
         {
-            lock (_gate) JsonFile.Save(_settingsPath, _settings);
+            lock (_gate) TrySave(_settingsPath, _settings);
         }
 
         /// <summary>Returns a snapshot copy of all rules (safe to enumerate off-lock).</summary>
@@ -116,6 +124,20 @@ namespace TaskPrioMemory.Storage
             }
         }
 
-        private void Persist() => JsonFile.Save(_rulesPath, _ruleFile);
+        private void Persist() => TrySave(_rulesPath, _ruleFile);
+
+        private void TrySave<T>(string path, T value)
+        {
+            try
+            {
+                JsonFile.Save(path, value);
+            }
+            catch (Exception ex) when (ex is IOException
+                                       || ex is UnauthorizedAccessException
+                                       || ex is System.Runtime.Serialization.SerializationException)
+            {
+                SaveFailed?.Invoke(ex);
+            }
+        }
     }
 }

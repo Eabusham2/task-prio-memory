@@ -42,7 +42,8 @@ Think "the two most useful columns of Task Manager, made permanent."
    - **Apply now** — changes the running instance(s) immediately.
    - **Save + remember** — also stores the preference for next time.
    - Use the **Filter by name** box to find a program quickly; a **✓** in the
-     *Saved* column marks programs you already have a preference for.
+     *Saved* column marks programs you already have a preference for. Click a
+     column header to sort (click again to reverse).
    - Tick **Auto-refresh** to keep the list live while the window is open (it
      pauses automatically when you hide the window, to stay idle).
 4. **Saved Preferences** tab → see everything you've remembered. Untick a row to
@@ -59,7 +60,12 @@ Think "the two most useful columns of Task Manager, made permanent."
 Changing your own apps needs no special rights. To manage processes owned by
 another user or by an elevated app, run Task Priority Memory **as
 administrator** (right-click → *Run as administrator*). When a change is denied,
-the app tells you instead of failing silently.
+the app tells you instead of failing silently — once per process, so an
+elevated app that stays open doesn't produce a warning on every scan.
+
+If a preference can't be written to disk (folder locked, disk full), the app
+keeps working with the change for this session and tells you it won't survive
+a restart, rather than crashing.
 
 ### Where settings are stored
 
@@ -82,7 +88,9 @@ dotnet build TaskPrioMemory.sln -c Release
 Or open `TaskPrioMemory.sln` in Visual Studio 2022 and press F5.
 
 CI (`.github/workflows/build.yml`) builds every push on `windows-latest` and
-uploads the compiled exe as an artifact.
+uploads the compiled exe as an artifact. Pushing a `v*` tag (e.g. `v1.1.0`)
+also publishes a GitHub Release with `TaskPrioMemory.exe` attached, for a
+permanent download link.
 
 ## Project layout
 

@@ -21,7 +21,13 @@ namespace TaskPrioMemory.Core
         private readonly Timer _timer;
         // Keyed by PID + start time so a reused PID counts as a new process.
         private readonly HashSet<string> _seen = new HashSet<string>();
+        // Process instances we already reported an access-denied result for.
+        // With "re-apply continuously" on, every scan retries the same
+        // elevated process; without this the tray showed a warning balloon
+        // every few seconds for as long as that process lived.
+        private readonly HashSet<string> _deniedReported = new HashSet<string>();
         private readonly object _scanGate = new object();
+        private readonly int _ownPid = Process.GetCurrentProcess().Id;
         private volatile bool _disposed;
 
         /// <summary>Raised (on a background thread) whenever a rule is applied to a process.</summary>
@@ -71,6 +77,7 @@ namespace TaskPrioMemory.Core
             foreach (var p in procs)
             {
                 int pid = p.Id;
+                if (pid == _ownPid) { p.Dispose(); continue; }
                 string key = IdentityKey(p, pid);
                 current.Add(key);
                 bool isNew = !_seen.Contains(key);
@@ -84,17 +91,26 @@ namespace TaskPrioMemory.Core
                         if (rule != null && rule.Enabled && (rule.HasPriority || rule.HasAffinity))
                         {
                             var result = ProcessManager.ApplyRule(p, rule, out string msg);
-                            if (result == ApplyResult.Applied || result == ApplyResult.AccessDenied)
+                            if (result == ApplyResult.Applied)
+                            {
                                 Applied?.Invoke(new AppliedEventArgs(name, pid, rule, result, msg));
+                            }
+                            else if (result == ApplyResult.AccessDenied)
+                            {
+                                // Report each process instance once, not once per scan.
+                                if (_deniedReported.Add(key))
+                                    Applied?.Invoke(new AppliedEventArgs(name, pid, rule, result, msg));
+                            }
                         }
                     }
                 }
                 p.Dispose();
             }
 
-            // Keep the "seen" set bounded to live processes so it never grows unbounded.
+            // Keep both sets bounded to live processes so they never grow unbounded.
             _seen.Clear();
             _seen.UnionWith(current);
+            _deniedReported.IntersectWith(current);
         }
 
         /// <summary>

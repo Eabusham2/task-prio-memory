@@ -51,7 +51,20 @@ namespace TaskPrioMemory.UI
             });
             _priorityCombo.SelectedIndex = 0;
             if (existing != null && existing.HasPriority)
-                _priorityCombo.SelectedItem = existing.Priority;
+            {
+                // Match case-insensitively: a hand-edited rules.json with
+                // "high" must not silently open as "(leave unchanged)" and
+                // then drop the priority on Save.
+                for (int i = 1; i < _priorityCombo.Items.Count; i++)
+                {
+                    if (string.Equals((string)_priorityCombo.Items[i], existing.Priority,
+                                      StringComparison.OrdinalIgnoreCase))
+                    {
+                        _priorityCombo.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
             layout.Controls.Add(_priorityCombo);
 
             layout.Controls.Add(new Label { Text = "CPU affinity:", AutoSize = true, Margin = new Padding(3, 10, 3, 0) });
