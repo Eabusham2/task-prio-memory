@@ -49,6 +49,10 @@ namespace TaskPrioMemory.UI
         }
         private List<ProcSnap> _snapshot = new List<ProcSnap>();
 
+        // Column sort state for the Processes list (click a header to sort).
+        private int _sortColumn;          // 0 = Program (default)
+        private bool _sortAscending = true;
+
         public MainForm(RuleStore store, ProcessWatcher watcher)
         {
             _store = store;
@@ -56,6 +60,14 @@ namespace TaskPrioMemory.UI
             BuildUi();
             RefreshProcesses();
             RefreshRules();
+            _store.SaveFailed += OnSaveFailed;
+        }
+
+        private void OnSaveFailed(Exception ex)
+        {
+            // Saves happen on the UI thread (button handlers), but be safe.
+            if (InvokeRequired) { BeginInvoke(new Action(() => OnSaveFailed(ex))); return; }
+            SetStatus("Could not save to " + RuleStore.DataDirectory + " - " + ex.Message);
         }
 
         private void BuildUi()
@@ -116,6 +128,12 @@ namespace TaskPrioMemory.UI
             _procList.Columns.Add("Affinity", 150);
             _procList.Columns.Add("Saved", 55, HorizontalAlignment.Center);
             _procList.SelectedIndexChanged += (s, e) => OnProcessSelected();
+            _procList.ColumnClick += (s, e) =>
+            {
+                if (e.Column == _sortColumn) _sortAscending = !_sortAscending;
+                else { _sortColumn = e.Column; _sortAscending = true; }
+                ApplyFilter();
+            };
 
             var leftPanel = new Panel { Dock = DockStyle.Fill };
 
@@ -434,11 +452,34 @@ namespace TaskPrioMemory.UI
                     finally { p.Dispose(); }
                 })
                 .Where(x => x != null && !string.IsNullOrEmpty(x.Name))
-                .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(x => x.Id)
                 .ToList();
 
             ApplyFilter();
+        }
+
+        // Priority sorts by scheduling level, not alphabetically.
+        private static readonly string[] PriorityOrder =
+            { "Idle", "BelowNormal", "Normal", "AboveNormal", "High", "RealTime" };
+
+        private static int PriorityRank(string prio)
+        {
+            int i = Array.IndexOf(PriorityOrder, prio);
+            return i < 0 ? -1 : i;
+        }
+
+        private IEnumerable<ProcSnap> Sorted(IEnumerable<ProcSnap> rows)
+        {
+            IOrderedEnumerable<ProcSnap> ordered;
+            switch (_sortColumn)
+            {
+                case 1: ordered = rows.OrderBy(x => x.Id); break;
+                case 2: ordered = rows.OrderBy(x => PriorityRank(x.Prio)); break;
+                case 3: ordered = rows.OrderBy(x => x.Aff, StringComparer.OrdinalIgnoreCase); break;
+                case 4: ordered = rows.OrderBy(x => x.Saved ? 0 : 1); break;
+                default: ordered = rows.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase); break;
+            }
+            ordered = ordered.ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Id);
+            return _sortAscending ? ordered : ordered.Reverse();
         }
 
         /// <summary>Renders the current snapshot into the list, honouring the filter box.</summary>
@@ -451,7 +492,7 @@ namespace TaskPrioMemory.UI
             _procList.Items.Clear();
             try
             {
-                foreach (var x in _snapshot)
+                foreach (var x in Sorted(_snapshot))
                 {
                     if (!string.IsNullOrEmpty(filter) &&
                         x.Name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0)
@@ -766,7 +807,11 @@ namespace TaskPrioMemory.UI
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) _refreshTimer?.Dispose();
+            if (disposing)
+            {
+                _store.SaveFailed -= OnSaveFailed;
+                _refreshTimer?.Dispose();
+            }
             base.Dispose(disposing);
         }
     }

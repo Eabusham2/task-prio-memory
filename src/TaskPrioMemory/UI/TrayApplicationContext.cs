@@ -27,6 +27,7 @@ namespace TaskPrioMemory.UI
             _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
 
             _store = new RuleStore();
+            _store.SaveFailed += OnSaveFailed;
             _watcher = new ProcessWatcher(_store);
             _watcher.Applied += OnRuleApplied;
 
@@ -118,6 +119,21 @@ namespace TaskPrioMemory.UI
                     _tray.ShowBalloonTip(4000, "Task Priority Memory",
                         $"Could not adjust {e.ProcessName} (access denied). Run as administrator to manage it.",
                         ToolTipIcon.Warning);
+                }
+                catch { /* balloon can fail if shell tray is busy; ignore */ }
+            }, null);
+        }
+
+        private void OnSaveFailed(Exception ex)
+        {
+            _ui.Post(_ =>
+            {
+                try
+                {
+                    _tray.ShowBalloonTip(6000, "Task Priority Memory",
+                        "Could not save to " + RuleStore.DataDirectory + ": " + ex.Message +
+                        "\nThe change applies for this session only.",
+                        ToolTipIcon.Error);
                 }
                 catch { /* balloon can fail if shell tray is busy; ignore */ }
             }, null);

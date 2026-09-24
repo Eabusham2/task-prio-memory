@@ -9,7 +9,7 @@
     <RootNamespace>TaskPrioMemory</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Deterministic>true</Deterministic>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Company>Eyad</Company>
     <Product>Task Priority Memory</Product>
     <!-- Keep the footprint tiny -->
