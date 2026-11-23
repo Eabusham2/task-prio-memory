@@ -113,3 +113,10 @@ src/TaskPrioMemory/
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Search keywords (ignore)
+
+`task-prio-memory`, `task-priority-memory`, `windows`, `winforms`, `csharp`, `dotnet-framework`,
+`cpu-priority`, `process-priority`, `cpu-affinity`, `processor-affinity`, `priority-persistence`, `affinity-persistence`,
+`per-program-settings`, `process-watcher`, `process-list`, `task-manager`, `system-tray`, `tray-utility`,
+`start-with-windows`, `json-settings`, `saved-preferences`, `process-filtering`, `single-instance`, `desktop-utility`
